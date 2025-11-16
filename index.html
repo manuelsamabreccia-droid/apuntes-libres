@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Apuntes Libres Web</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+body, html {margin:0; padding:0; height:100%; overflow:hidden; font-family: Arial;}
+#toolbar {
+  position: fixed; top:10px; left:10px; z-index:1000;
+  background: rgba(255,255,255,0.95); padding:8px; border-radius:5px; border:1px solid #ccc;
+}
+#canvas {
+  width:3000px; height:3000px; position:relative; background-color:#f9f9f9; transform-origin:0 0;
+}
+.note, .image {
+  position:absolute; padding:8px; border:1px solid #333; background-color:#fff; cursor:move; min-width:100px; min-height:50px; box-sizing:border-box;
+}
+.note {outline:none;}
+.resize-handle { width:10px; height:10px; background:#333; position:absolute; right:0; bottom:0; cursor:se-resize;}
+svg {position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;}
+#menu {position:fixed; display:none; z-index:2000; background:#fff; border:1px solid #333; border-radius:5px; padding:10px; width:200px; box-shadow: 0 0 10px rgba(0,0,0,0.3);}
+#menu input, #menu select, #menu button {margin:3px; width:90%;}
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button onclick="addTextNote()">Agregar Nota</button>
+  <input type="file" id="fileInput">
+  <button onclick="createProject()">Nuevo Proyecto</button>
+  <select id="projectSelector" onchange="loadProject()"><option value="">Seleccionar Proyecto</option></select>
+  <button onclick="saveProject()">Guardar Proyecto</button>
+  <button onclick="exportPDF()">Exportar PDF</button>
+</div>
+
+<div id="canvas"></div>
+<svg id="connections"></svg>
+
+<div id="menu">
+  <button onclick="deleteSelected()">Borrar</button>
+  <button onclick="disconnectSelected()">Desconectar</button><br>
+  <label>Color fondo:</label><input type="color" id="bgColor"><br>
+  <label>Color borde:</label><input type="color" id="borderColor"><br>
+  <label>Fuente:</label><select id="fontFamily"><option>Arial</option><option>Verdana</option><option>Tahoma</option><option>Times New Roman</option></select><br>
+  <label>Tamaño:</label><input type="number" id="fontSize" min="8" max="72" value="14"><br>
+  <label>Forma:</label><select id="shape"><option value="rect">Rectángulo</option><option value="round">Redondeado</option><option value="circle">Círculo</option></select>
+</div>
+
+<script>
+let canvas = document.getElementById('canvas');
+let connectionsSVG = document.getElementById('connections');
+let menu = document.getElementById('menu');
+let scale = 1;
+let notes = [];
+let lines = [];
+let selectedNotes = [];
+let currentProject = null;
+let isPanning = false;
+let panStartX = 0, panStartY = 0;
+let canvasOffsetX = 0, canvasOffsetY = 0;
+
+// --- Crear nota ---
+function addTextNote() {
+  let note = document.createElement('div');
+  note.className='note';
+  note.contentEditable=false;
+  note.style.left='50px';
+  note.style.top='50px';
+  note.innerText='Escribe aquí...';
+  addResizeHandle(note);
+  initElement(note);
+  canvas.appendChild(note);
+  notes.push(note);
+}
+
+// --- Agregar handle de redimension ---
+function addResizeHandle(el){
+  let handle=document.createElement('div'); handle.className='resize-handle';
+  el.appendChild(handle);
+  handle.onmousedown=function(e){
+    e.stopPropagation(); e.preventDefault();
+    let startX=e.clientX, startY=e.clientY;
+    let startW=el.offsetWidth, startH=el.offsetHeight;
+    document.onmousemove=function(ev){
+      el.style.width=(startW+(ev.clientX-startX))+'px';
+      el.style.height=(startH+(ev.clientY-startY))+'px';
+      updateLines();
+    }
+    document.onmouseup=function(){document.onmousemove=null; document.onmouseup=null;}
+  }
+}
+
+// --- Inicializar elemento ---
+function initElement(el){
+  makeDraggable(el);
+  el.addEventListener('click',function(e){
+    if(e.ctrlKey){
+      toggleSelection(el);
+    } else {
+      selectedNotes=[el];
+      if(el.className==='note') {el.contentEditable=true; el.focus();}
+    }
+    e.stopPropagation();
+  });
+  el.addEventListener('contextmenu',function(e){
+    e.preventDefault(); selectedNotes=[el]; showMenu(el,e.clientX,e.clientY);
+  });
+}
+
+// --- Subir imagen ---
+document.getElementById('fileInput').addEventListener('change', function(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload=function(event){
+    let img=document.createElement('img');
+    img.src=event.target.result;
+    img.className='image';
+    img.style.left='100px'; img.style.top='100px'; img.style.width='200px'; img.style.height='150px';
+    addResizeHandle(img); initElement(img); canvas.appendChild(img); notes.push(img);
+  }
+  reader.readAsDataURL(file);
+});
+
+// --- Selección múltiple ---
+function toggleSelection(el){
+  if(selectedNotes.includes(el)) selectedNotes=selectedNotes.filter(n=>n!==el);
+  else selectedNotes.push(el);
+}
+
+// --- Menú ---
+function showMenu(el,x,y){
+  menu.style.display='block'; menu.style.left=x+'px'; menu.style.top=y+'px';
+  if(el.className==='note'){
+    document.getElementById('bgColor').value=rgbToHex(el.style.backgroundColor||'#ffffff');
+    document.getElementById('borderColor').value=rgbToHex(el.style.borderColor||'#333333');
+    document.getElementById('fontFamily').value=el.style.fontFamily||'Arial';
+    document.getElementById('fontSize').value=parseInt(el.style.fontSize)||14;
+    document.getElementById('shape').value=el.style.borderRadius==='50%'?'circle':el.style.borderRadius==='10px'?'round':'rect';
+  }
+}
+
+// --- Propiedades ---
+document.getElementById('bgColor').addEventListener('input',function(){selectedNotes.forEach(el=>el.style.backgroundColor=this.value);});
+document.getElementById('borderColor').addEventListener('input',function(){selectedNotes.forEach(el=>el.style.borderColor=this.value);});
+document.getElementById('fontFamily').addEventListener('change',function(){selectedNotes.forEach(el=>{if(el.className==='note') el.style.fontFamily=this.value;});});
+document.getElementById('fontSize').addEventListener('input',function(){selectedNotes.forEach(el=>{if(el.className==='note') el.style.fontSize=this.value+'px';});});
+document.getElementById('shape').addEventListener('change',function(){
+  selectedNotes.forEach(el=>{
+    if(this.value==='circle') el.style.borderRadius='50%';
+    else if(this.value==='round') el.style.borderRadius='10px';
+    else el.style.borderRadius='0px';
+  });
+});
+
+// --- Borrar ---
+function deleteSelected(){ 
+  selectedNotes.forEach(el=>{
+    lines=lines.filter(l=>{
+      if(l.note1===el||l.note2===el){connectionsSVG.removeChild(l.lineElement);return false;}
+      return true;
+    });
+    canvas.removeChild(el); notes=notes.filter(n=>n!==el);
+  });
+  selectedNotes=[]; menu.style.display='none';
+}
+
+// --- Desconectar ---
+function disconnectSelected(){
+  if(selectedNotes.length<2) return;
+  let toRemove=[];
+  lines.forEach(l=>{
+    if(selectedNotes.includes(l.note1) && selectedNotes.includes(l.note2)) {
+      connectionsSVG.removeChild(l.lineElement);
+      toRemove.push(l);
+    }
+  });
+  lines=lines.filter(l=>!toRemove.includes(l));
+  selectedNotes=[]; menu.style.display='none';
+}
+
+// --- Drag & drop ---
+function makeDraggable(el){
+  let mouseX=0,mouseY=0;
+  el.onmousedown=function(e){
+    if(e.button===0 && !e.target.classList.contains('resize-handle')){
+      e.preventDefault(); mouseX=e.clientX; mouseY=e.clientY;
+      document.onmouseup=closeDragElement; document.onmousemove=elementDrag;
+    }
+  }
+  function elementDrag(e){
+    e.preventDefault();
+    let dx=mouseX-e.clientX, dy=mouseY-e.clientY;
+    mouseX=e.clientX; mouseY=e.clientY;
+    el.style.top=(el.offsetTop-dy)+'px';
+    el.style.left=(el.offsetLeft-dx)+'px';
+    updateLines();
+  }
+  function closeDragElement(){document.onmouseup=null; document.onmousemove=null;}
+}
+
+// --- Crear línea ---
+function createLine(note1,note2){
+  let lineEl=document.createElementNS("http://www.w3.org/2000/svg","line");
+  lineEl.setAttribute("stroke","black"); lineEl.setAttribute("stroke-width","2");
+  connectionsSVG.appendChild(lineEl);
+  let line={note1,note2,lineElement:lineEl};
+  lines.push(line);
+  updateLines();
+}
+
+// --- Actualizar líneas ---
+function updateLines(){
+  lines.forEach(l=>{
+    let r1=l.note1.getBoundingClientRect();
+    let r2=l.note2.getBoundingClientRect();
+    let c=canvas.getBoundingClientRect();
+    let x1=(r1.left+r1.width/2-c.left)/scale;
+    let y1=(r1.top+r1.height/2-c.top)/scale;
+    let x2=(r2.left+r2.width/2-c.left)/scale;
+    let y2=(r2.top+r2.height/2-c.top)/scale;
+    l.lineElement.setAttribute("x1",x1); l.lineElement.setAttribute("y1",y1);
+    l.lineElement.setAttribute("x2",x2); l.lineElement.setAttribute("y2",y2);
+  });
+}
+
+// --- Zoom ---
+window.addEventListener('wheel',function(e){
+  e.preventDefault();
+  let factor=e.deltaY<0?1.1:0.9;
+  scale*=factor;
+  canvas.style.transform=`scale(${scale}) translate(${canvasOffsetX}px,${canvasOffsetY}px)`;
+  connectionsSVG.style.transform=`scale(${scale}) translate(${canvasOffsetX}px,${canvasOffsetY}px)`;
+  updateLines();
+});
+
+// --- Pan canvas ---
+canvas.addEventListener('mousedown', function(e){
+  if(e.target===canvas){
+    isPanning=true; panStartX=e.clientX; panStartY=e.clientY;
+    canvas.style.cursor='grabbing';
+  }
+});
+canvas.addEventListener('mousemove', function(e){
+  if(isPanning){
+    let dx = (e.clientX - panStartX)/scale;
+    let dy = (e.clientY - panStartY)/scale;
+    panStartX=e.clientX; panStartY=e.clientY;
+    canvasOffsetX += dx; canvasOffsetY += dy;
+    canvas.style.transform=`scale(${scale}) translate(${canvasOffsetX}px,${canvasOffsetY}px)`;
+    connectionsSVG.style.transform=`scale(${scale}) translate(${canvasOffsetX}px,${canvasOffsetY}px)`;
+  }
+});
+canvas.addEventListener('mouseup', function(e){isPanning=false; canvas.style.cursor='default';});
+canvas.addEventListener('mouseleave', function(e){isPanning=false; canvas.style.cursor='default';});
+
+// --- Conectar con Ctrl + C ---
+window.addEventListener('keydown', function(e){
+  if(e.key.toLowerCase()==='c' && selectedNotes.length>1 && e.ctrlKey){
+    for(let i=0;i<selectedNotes.length;i++){
+      for(let j=i+1;j<selectedNotes.length;j++){
+        createLine(selectedNotes[i],selectedNotes[j]);
+      }
+    }
+  }
+});
+
+// --- Exportar PDF ---
+async function exportPDF(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'px', format:[canvas.offsetWidth, canvas.offsetHeight]});
+  doc.setFillColor(249,249,249); doc.rect(0,0,canvas.offsetWidth,canvas.offsetHeight,'F');
+  for(let n of notes){
+    let x=parseFloat(n.style.left);
+    let y=parseFloat(n.style.top);
+    let w=n.offsetWidth, h=n.offsetHeight;
+    if(n.tagName==='DIV'){
+      doc.setFillColor(...hexToRgb(n.style.backgroundColor||'#ffffff'));
+      doc.setDrawColor(...hexToRgb(n.style.borderColor||'#333333'));
+      doc.rect(x,y,w,h,'FD');
+      doc.setFont(n.style.fontFamily||'Arial');
+      doc.setFontSize(parseInt(n.style.fontSize)||14);
+      doc.text(n.innerText, x+5, y+20, {maxWidth:w-10});
+    } else {
+      await new Promise(resolve=>{
+        let img = new Image(); img.src=n.src;
+        img.onload=()=>{
+          doc.addImage(img,'PNG',x,y,w,h); resolve();
+        }
+      });
+    }
+  }
+  doc.setDrawColor(0,0,0); doc.setLineWidth(2);
+  lines.forEach(l=>{
+    let x1=parseFloat(l.lineElement.getAttribute('x1'));
+    let y1=parseFloat(l.lineElement.getAttribute('y1'));
+    let x2=parseFloat(l.lineElement.getAttribute('x2'));
+    let y2=parseFloat(l.lineElement.getAttribute('y2'));
+    doc.line(x1,y1,x2,y2);
+  });
+  doc.save('Apuntes.pdf');
+}
+
+// --- Proyectos ---
+function createProject(){let name=prompt("Nombre del proyecto:"); if(!name) return; currentProject=name; if(!localStorage.getItem('projects')) localStorage.setItem('projects',JSON.stringify([])); let projects=JSON.parse(localStorage.getItem('projects')); if(!projects.includes(name)){projects.push(name); localStorage.setItem('projects',JSON.stringify(projects)); updateProjectSelector();} alert("Proyecto creado: "+name); clearCanvas();}
+function updateProjectSelector(){let sel=document.getElementById('projectSelector'); sel.innerHTML='<option value="">Seleccionar Proyecto</option>'; let projects=JSON.parse(localStorage.getItem('projects')||'[]'); projects.forEach(p=>{let o=document.createElement('option'); o.value=p; o.innerText=p; sel.appendChild(o);});}
+function saveProject(){if(!currentProject) {alert("Seleccione o cree un proyecto primero."); return;} let data={notes:[],lines:[]}; notes.forEach(n=>data.notes.push({type:n.tagName==='IMG'?'image':'note',content:n.tagName==='IMG'?n.src:n.innerText,left:n.style.left, top:n.style.top,width:n.style.width, height:n.style.height,bgColor:n.style.backgroundColor, borderColor:n.style.borderColor,fontFamily:n.style.fontFamily, fontSize:n.style.fontSize, borderRadius:n.style.borderRadius})); lines.forEach(l=>data.lines.push({note1Index:notes.indexOf(l.note1),note2Index:notes.indexOf(l.note2)})); localStorage.setItem('project_'+currentProject,JSON.stringify(data)); alert("Proyecto '"+currentProject+"' guardado.");}
+function loadProject(){let sel=document.getElementById('projectSelector'); if(!sel.value) return; currentProject=sel.value; let data=JSON.parse(localStorage.getItem('project_'+currentProject)); if(!data) return; clearCanvas(); data.notes.forEach(n=>{let el;if(n.type==='note'){el=document.createElement('div'); el.className='note'; el.contentEditable=false; el.innerText=n.content;} else {el=document.createElement('img'); el.className='image'; el.src=n.content;} el.style.left=n.left; el.style.top=n.top; el.style.width=n.width; el.style.height=n.height; el.style.backgroundColor=n.bgColor; el.style.borderColor=n.borderColor; el.style.fontFamily=n.fontFamily; el.style.fontSize=n.fontSize; el.style.borderRadius=n.borderRadius; addResizeHandle(el); initElement(el); canvas.appendChild(el); notes.push(el);}); data.lines.forEach(l=>createLine(notes[l.note1Index],notes[l.note2Index]));}
+function clearCanvas(){canvas.innerHTML=''; connectionsSVG.innerHTML=''; notes=[]; lines=[]; selectedNotes=[]; menu.style.display='none';}
+function rgbToHex(rgb){if(!rgb) return '#ffffff'; let result=rgb.match(/\d+/g); if(!result) return '#ffffff'; return "#"+((1<<24)+(+result[0]<<16)+(+result[1]<<8)+(+result[2])).toString(16).slice(1);}
+function hexToRgb(hex){let c=hex.substring(1);return [parseInt(c.substr(0,2),16),parseInt(c.substr(2,2),16),parseInt(c.substr(4,2),16)];}
+
+updateProjectSelector();
+canvas.addEventListener('click',
