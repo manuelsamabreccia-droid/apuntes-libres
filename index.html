@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apuntes Libres</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <header>
+        <h1>Apuntes Libres</h1>
+        <p>Escribí, guardá y organizá tus apuntes directamente en línea.</p>
+    </header>
+
+    <main>
+        <section class="editor-container">
+            <textarea id="editor" placeholder="Escribí tus apuntes aquí..."></textarea>
+        </section>
+
+        <section class="buttons">
+            <button id="guardarBtn">Guardar Apunte</button>
+            <button id="borrarBtn">Borrar Todo</button>
+            <button id="exportarBtn">Exportar .txt</button>
+        </section>
+
+        <section class="lista">
+            <h2>Apuntes Guardados</h2>
+            <ul id="listaApuntes"></ul>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
+📌 IMPORTANTE
+Este index funciona solo si tenés estos 3 archivos en la misma carpeta:
+
+diff
+Copy code
+index.html
+style.css
+script.js
