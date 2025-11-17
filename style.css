@@ -1,55 +1,283 @@
-body {
-    margin: 0;
-    overflow: hidden;
-    font-family: Arial;
+// =====================
+// VARIABLES PRINCIPALES
+// =====================
+const canvas = document.getElementById("canvas");
+const lineLayer = document.getElementById("lineLayer");
+const contextMenu = document.getElementById("contextMenu");
+
+let scale = 1;
+let isPanning = false;
+let startPan = { x: 0, y: 0 };
+let canvasOffset = { x: 0, y: 0 };
+
+let selectedItems = [];
+let connections = [];
+let currentRightClickTarget = null;
+
+// =====================
+// MOVIMIENTO DEL LIENZO
+// =====================
+canvas.addEventListener("mousedown", e => {
+    if (e.target === canvas) {
+        isPanning = true;
+        startPan = { x: e.clientX - canvasOffset.x, y: e.clientY - canvasOffset.y };
+    }
+});
+
+document.addEventListener("mousemove", e => {
+    if (isPanning) {
+        canvasOffset.x = e.clientX - startPan.x;
+        canvasOffset.y = e.clientY - startPan.y;
+
+        canvas.style.transform = `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${scale})`;
+        lineLayer.style.transform = canvas.style.transform;
+
+        updateConnections();
+    }
+});
+
+document.addEventListener("mouseup", () => isPanning = false);
+
+// =====================
+// ZOOM REAL (rueda)
+// =====================
+document.addEventListener("wheel", e => {
+    e.preventDefault();
+
+    const zoomSpeed = 0.1;
+    const prevScale = scale;
+
+    scale += e.deltaY < 0 ? zoomSpeed : -zoomSpeed;
+    scale = Math.min(Math.max(scale, 0.2), 4);
+
+    const mx = e.clientX - canvasOffset.x;
+    const my = e.clientY - canvasOffset.y;
+
+    canvasOffset.x -= mx * (scale - prevScale);
+    canvasOffset.y -= my * (scale - prevScale);
+
+    canvas.style.transform = `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${scale})`;
+    lineLayer.style.transform = canvas.style.transform;
+
+    updateConnections();
+}, { passive: false });
+
+// =====================
+// CREACIÓN DE TEXTOS
+// =====================
+document.getElementById("newText").onclick = () => {
+    const div = document.createElement("div");
+    div.className = "textBox";
+    div.contentEditable = true;
+    div.innerText = "Escribí aquí…";
+    div.style.left = "100px";
+    div.style.top = "100px";
+
+    div.addEventListener("focus", () => {
+        if (div.innerText === "Escribí aquí…") div.innerText = "";
+    });
+
+    makeDraggable(div);
+    canvas.appendChild(div);
+};
+
+// =====================
+// CREACIÓN DE IMÁGENES
+// =====================
+document.getElementById("newImage").onclick = () => {
+    document.getElementById("imageLoader").click();
+};
+
+document.getElementById("imageLoader").onchange = e => {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+
+    reader.onload = () => {
+        const box = document.createElement("div");
+        box.className = "imageBox";
+        box.style.left = "150px";
+        box.style.top = "150px";
+        box.style.width = "200px";
+        box.style.height = "150px";
+
+        const img = document.createElement("img");
+        img.src = reader.result;
+
+        box.appendChild(img);
+        makeDraggable(box);
+        canvas.appendChild(box);
+    };
+
+    reader.readAsDataURL(file);
+};
+
+// =====================
+// DRAGGING DE TEXTOS/IMÁGENES
+// =====================
+function makeDraggable(el) {
+    let offsetX = 0, offsetY = 0;
+    el.onmousedown = e => {
+        if (e.button === 0) {
+            selectedItems = [el];
+            offsetX = e.offsetX;
+            offsetY = e.offsetY;
+            document.onmousemove = drag;
+            document.onmouseup = stopDrag;
+        }
+    };
+
+    function drag(e) {
+        el.style.left = (e.clientX - offsetX - canvasOffset.x) / scale + "px";
+        el.style.top = (e.clientY - offsetY - canvasOffset.y) / scale + "px";
+        updateConnections();
+    }
+
+    function stopDrag() {
+        document.onmousemove = null;
+    }
+
+    el.oncontextmenu = e => {
+        e.preventDefault();
+        currentRightClickTarget = el;
+        openContextMenu(e);
+    };
 }
 
-#toolbar {
-    position: fixed;
-    left: 0;
-    top: 0;
-    background: #eee;
-    width: 200px;
-    height: 100%;
-    padding: 15px;
-    border-right: 2px solid #bbb;
+// =====================
+// MENÚ CLICK DERECHO
+// =====================
+function openContextMenu(e) {
+    contextMenu.style.left = e.clientX + "px";
+    contextMenu.style.top = e.clientY + "px";
+    contextMenu.classList.remove("hidden");
 }
 
-#canvasContainer {
-    position: absolute;
-    left: 200px;
-    top: 0;
-    width: calc(100% - 200px);
-    height: 100vh;
-    overflow: hidden;
-    background: white;
+document.addEventListener("click", () => {
+    contextMenu.classList.add("hidden");
+});
+
+// =====================
+// BORRAR ELEMENTO
+// =====================
+document.getElementById("deleteItem").onclick = () => {
+    if (currentRightClickTarget) {
+        currentRightClickTarget.remove();
+        removeConnections(currentRightClickTarget);
+        currentRightClickTarget = null;
+    }
+};
+
+// =====================
+// CONECTAR ELEMENTOS
+// Ctrl + C para conectar
+// =====================
+document.getElementById("connectItem").onclick = connectSelected;
+
+document.addEventListener("keydown", e => {
+    if (e.ctrlKey && e.key.toLowerCase() === "c") {
+        connectSelected();
+    }
+});
+
+function connectSelected() {
+    if (selectedItems.length === 1 && currentRightClickTarget) {
+        const a = selectedItems[0];
+        const b = currentRightClickTarget;
+
+        if (a !== b) {
+            connections.push({ a, b, line: createLine() });
+            updateConnections();
+        }
+    }
 }
 
-#canvas {
-    position: absolute;
-    left: 0;
-    top: 0;
-    transform-origin: 0 0;
+function createLine() {
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("stroke", "black");
+    line.setAttribute("stroke-width", "3");
+    lineLayer.appendChild(line);
+    return line;
 }
 
-.elemento {
-    position: absolute;
-    border: 1px solid #aaa;
-    padding: 6px;
-    background: white;
-    cursor: move;
-    user-select: none;
+// =====================
+// DESCONECTAR
+// =====================
+document.getElementById("disconnectItem").onclick = () => {
+    removeConnections(currentRightClickTarget);
+};
+
+function removeConnections(el) {
+    connections = connections.filter(c => {
+        if (c.a === el || c.b === el) {
+            c.line.remove();
+            return false;
+        }
+        return true;
+    });
 }
 
-.elemento img {
-    max-width: 300px;
-    resize: both;
-    overflow: auto;
+// =====================
+// ACTUALIZAR LÍNEAS
+// =====================
+function updateConnections() {
+    connections.forEach(c => {
+        const a = c.a.getBoundingClientRect();
+        const b = c.b.getBoundingClientRect();
+
+        const ax = (a.left + a.width / 2 - canvasOffset.x) / scale;
+        const ay = (a.top + a.height / 2 - canvasOffset.y) / scale;
+
+        const bx = (b.left + b.width / 2 - canvasOffset.x) / scale;
+        const by = (b.top + b.height / 2 - canvasOffset.y) / scale;
+
+        c.line.setAttribute("x1", ax);
+        c.line.setAttribute("y1", ay);
+        c.line.setAttribute("x2", bx);
+        c.line.setAttribute("y2", by);
+    });
 }
 
-#connections {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-}
+// =====================
+// EXPORTAR PDF
+// =====================
+document.getElementById("exportPDF").onclick = () => {
+    window.print();
+};
+
+// =====================
+// GUARDAR / CARGAR PROYECTOS
+// =====================
+document.getElementById("saveProj").onclick = () => {
+    const data = {
+        canvasHTML: canvas.innerHTML,
+        connectionsData: connections.map(c => ({
+            aIndex: [...canvas.children].indexOf(c.a),
+            bIndex: [...canvas.children].indexOf(c.b)
+        }))
+    };
+
+    localStorage.setItem("proyectoApuntes", JSON.stringify(data));
+    alert("Proyecto guardado");
+};
+
+document.getElementById("loadProj").onclick = () => {
+    const raw = localStorage.getItem("proyectoApuntes");
+    if (!raw) return alert("No hay proyecto guardado");
+
+    const data = JSON.parse(raw);
+
+    canvas.innerHTML = data.canvasHTML;
+    connections = [];
+
+    [...canvas.children].forEach(el => makeDraggable(el));
+
+    data.connectionsData.forEach(pair => {
+        const a = canvas.children[pair.aIndex];
+        const b = canvas.children[pair.bIndex];
+        const line = createLine();
+        connections.push({ a, b, line });
+    });
+
+    updateConnections();
+    alert("Proyecto cargado");
+};
