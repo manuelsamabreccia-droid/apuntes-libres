@@ -1,0 +1,55 @@
+body {
+    margin: 0;
+    overflow: hidden;
+    font-family: Arial;
+}
+
+#toolbar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    background: #eee;
+    width: 200px;
+    height: 100%;
+    padding: 15px;
+    border-right: 2px solid #bbb;
+}
+
+#canvasContainer {
+    position: absolute;
+    left: 200px;
+    top: 0;
+    width: calc(100% - 200px);
+    height: 100vh;
+    overflow: hidden;
+    background: white;
+}
+
+#canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 0 0;
+}
+
+.elemento {
+    position: absolute;
+    border: 1px solid #aaa;
+    padding: 6px;
+    background: white;
+    cursor: move;
+    user-select: none;
+}
+
+.elemento img {
+    max-width: 300px;
+    resize: both;
+    overflow: auto;
+}
+
+#connections {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
