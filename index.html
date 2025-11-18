@@ -8,36 +8,32 @@
 </head>
 <body>
 
-    <header>
-        <h1>Apuntes Libres</h1>
-        <p>Escribí, guardá y organizá tus apuntes directamente en línea.</p>
-    </header>
+    <!-- BARRA LATERAL -->
+    <div id="toolbar">
+        <h2>Herramientas</h2>
+        
+        <button id="addText">Agregar Texto</button><br><br>
+        <button id="addImage">Agregar Imagen</button><br><br>
 
-    <main>
-        <section class="editor-container">
-            <textarea id="editor" placeholder="Escribí tus apuntes aquí..."></textarea>
-        </section>
+        <label>Color de línea:</label>
+        <input type="color" id="lineColor" value="#000000"><br><br>
 
-        <section class="buttons">
-            <button id="guardarBtn">Guardar Apunte</button>
-            <button id="borrarBtn">Borrar Todo</button>
-            <button id="exportarBtn">Exportar .txt</button>
-        </section>
+        <label>Color de fondo:</label>
+        <input type="color" id="bgColor" value="#ffffff"><br><br>
 
-        <section class="lista">
-            <h2>Apuntes Guardados</h2>
-            <ul id="listaApuntes"></ul>
-        </section>
-    </main>
+        <button id="exportPDF">Exportar PDF</button>
+
+        <!-- Cargar imagen -->
+        <input type="file" id="imgLoader" accept="image/*" style="display:none">
+    </div>
+
+    <!-- ÁREA DEL LIENZO -->
+    <div id="canvasContainer">
+        <svg id="connections"></svg>
+        <div id="canvas"></div>
+    </div>
 
     <script src="script.js"></script>
+
 </body>
 </html>
-📌 IMPORTANTE
-Este index funciona solo si tenés estos 3 archivos en la misma carpeta:
-
-diff
-Copy code
-index.html
-style.css
-script.js
